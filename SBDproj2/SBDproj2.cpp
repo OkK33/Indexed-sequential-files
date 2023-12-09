@@ -12,6 +12,7 @@ using namespace std;
 
 int setOfFiles = 1;
 
+
 struct IndexEntry {
     int key = -1;
     int pageNum = -1;
@@ -33,6 +34,7 @@ struct DataFile {
     int currentRecords; //lacznie z usunietymi
     int prevPage; //aktualna strona w buforze
     int currentPages; //dla overflow niepotrzebne
+    int deletedRecords;
 };
 
 struct IndexFile {
@@ -99,7 +101,7 @@ int findPageInIndex(IndexFile& index, int key) {
     for (int i = 0; i < pagesInIndex; i++) {
         //clearIndexBuffer(index);
         loadPageToIndexBuffer(index, i);
-        if (index.buffer[0].key >= key && lastEntryInPrevBuffer.key < key) { //jesli klucz jest wiekszy od tego w ostatnim wpisie z poprzedniej strony i mniejszy od pierwszego w nowej stronie
+        if (index.buffer[0].key > key && lastEntryInPrevBuffer.key < key) { //jesli klucz jest wiekszy od tego w ostatnim wpisie z poprzedniej strony i mniejszy od pierwszego w nowej stronie
             return lastEntryInPrevBuffer.pageNum;
         }
         for (int j = 0; j < INDEX_BUFFER_SIZE - 1; j++) {
@@ -402,6 +404,7 @@ void deleteRecord(IndexFile& index, DataFile& data, DataFile& overflow, int key)
             if (data.buffer[i].key == key) {
                 data.buffer[i].deleted = true; //jesli klucz jest w main area
                 writeToDataFile(data, pageNumber);
+                data.deletedRecords++;
                 return;
             }
             if (data.buffer[i].key < key) {
@@ -420,6 +423,7 @@ void deleteRecord(IndexFile& index, DataFile& data, DataFile& overflow, int key)
             if (record.key == key) {
                 overflow.buffer[nextOverflowPlaceInBuffer].deleted = true;
                 writeToDataFile(overflow, nextOverflowPage);
+                overflow.deletedRecords++;
                 return;
             }
             
@@ -544,8 +548,8 @@ void beforeReorg(int& dataPages, int& newIndexPages, int& newDataPages, int& new
     Record* dataBuffer = new Record[BUFFER_SIZE];
     Record* overflowBuffer = new Record[BUFFER_SIZE];
 
-    DataFile dataFile = { "data2.bin", dataBuffer,0,-1,0 };
-    DataFile overflowFile = { "overflow2.bin", overflowBuffer,0,-1,0 };
+    DataFile dataFile = { "data2.bin", dataBuffer,0,-1,0,0 };
+    DataFile overflowFile = { "overflow2.bin", overflowBuffer,0,-1,0,0 };
     IndexFile indexFile = { "index2.bin", indexBuffer, 0 };
 
     if (setOfFiles == 2) {
@@ -608,7 +612,7 @@ void beforeReorg(int& dataPages, int& newIndexPages, int& newDataPages, int& new
     int currentIndexPageToWrite = 0;
     //int entriesInCurrentIndex = 1; //zmienilem, testuje
     //bool firstRecord = true;
-    while (rewrittenRecords < data.currentRecords + overflow.currentRecords) {
+    while (rewrittenRecords < data.currentRecords + overflow.currentRecords - data.deletedRecords - overflow.deletedRecords) {
 
         for (int j = 0; j < dataPages; j++) {
 
@@ -820,13 +824,14 @@ void beforeReorg(int& dataPages, int& newIndexPages, int& newDataPages, int& new
 void reorganize(IndexFile& index, DataFile& data, DataFile& overflow, float alpha) {
     printf("----------REORGANIZING---------- \n");
     int dataPages = data.currentPages;
-    int overflowPages = ceil((float)overflow.currentRecords / BUFFER_SIZE);
+    int overflowPages = ceil((float)(overflow.currentRecords-overflow.deletedRecords) / BUFFER_SIZE);
 
-    int newDataPages = ceil((float)(countAllRecords(data, overflow)) / (BUFFER_SIZE * alpha));
+    int newDataPages = ceil((float)(countAllRecords(data, overflow)-data.deletedRecords-overflow.deletedRecords) / (BUFFER_SIZE * alpha));
     int newIndexPages = ceil((float)newDataPages / INDEX_BUFFER_SIZE);
     int newOverflowPages = ceil((float)newDataPages * REORG_LVL);
 
     beforeReorg(dataPages, newIndexPages, newDataPages, newOverflowPages, data, index, overflow, alpha);
+
 
     if (setOfFiles == 1) {
         setOfFiles = 2;
@@ -897,8 +902,8 @@ int main()
     Record* dataBuffer = new Record[BUFFER_SIZE];
     Record* overflowBuffer = new Record[BUFFER_SIZE];
 
-    DataFile dataFile = { "data.bin", dataBuffer,0,-1,0 };
-    DataFile overflowFile = { "overflow.bin", overflowBuffer,0,-1,0 };
+    DataFile dataFile = { "data.bin", dataBuffer,0,-1,0,0 };
+    DataFile overflowFile = { "overflow.bin", overflowBuffer,0,-1,0,0 };
     IndexFile indexFile = { "index.bin", indexBuffer, 0, -1 };
 
 
