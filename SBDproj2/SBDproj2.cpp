@@ -99,19 +99,19 @@ int findPageInIndex(IndexFile& index, int key) {
     for (int i = 0; i < pagesInIndex; i++) {
         //clearIndexBuffer(index);
         loadPageToIndexBuffer(index, i);
-        if (index.buffer[0].key > key && lastEntryInPrevBuffer.key < key) { //jesli klucz jest wiekszy od tego w ostatnim wpisie z poprzedniej strony i mniejszy od pierwszego w nowej stronie
+        if (index.buffer[0].key >= key && lastEntryInPrevBuffer.key < key) { //jesli klucz jest wiekszy od tego w ostatnim wpisie z poprzedniej strony i mniejszy od pierwszego w nowej stronie
             return lastEntryInPrevBuffer.pageNum;
         }
         for (int j = 0; j < INDEX_BUFFER_SIZE - 1; j++) {
-            if (index.buffer[j].key < key && index.buffer[j + 1].pageNum == -1) { //jesli klucz jest wiekszy od tego we wpisie i nie ma nastepnego wpisu
+            if (index.buffer[j].key <= key && index.buffer[j + 1].pageNum == -1) { //jesli klucz jest wiekszy od tego we wpisie i nie ma nastepnego wpisu
                 return index.buffer[j].pageNum;
             }
-            else if (index.buffer[j].key < key && index.buffer[j + 1].key >  key) { //jesli klucz jest wiekszy od tego we wpisie i mniejszy od nastepnego
+            else if (index.buffer[j].key <= key && index.buffer[j + 1].key >  key) { //jesli klucz jest wiekszy od tego we wpisie i mniejszy od nastepnego
                 return index.buffer[j].pageNum;
             }
            
         }
-        if (index.buffer[INDEX_BUFFER_SIZE - 1].key < key && i == pagesInIndex - 1) //jesli nie ma nastepnej strony
+        if (index.buffer[INDEX_BUFFER_SIZE - 1].key <= key && i == pagesInIndex - 1) //jesli nie ma nastepnej strony
         {
             return index.buffer[INDEX_BUFFER_SIZE - 1].pageNum;
         }
@@ -357,13 +357,13 @@ Record findRecord(IndexFile& index, DataFile& data, DataFile& overflow, int key)
         loadPageToDataBuffer(data, pageNumber);
         data.prevPage = pageNumber;
     }
-    for (int i = BUFFER_SIZE - 1; i >= 0; i--) {
+    for (int i = 0; i < BUFFER_SIZE; i++) {
         if (data.buffer[i].key == key) {
             return data.buffer[i]; //jesli klucz jest w main area
         }
         if (data.buffer[i].key < key) {
             record = data.buffer[i];
-            break;
+            //break;
         }
     }
     while (record.key != key) {
@@ -386,16 +386,47 @@ Record findRecord(IndexFile& index, DataFile& data, DataFile& overflow, int key)
     return record;
 }
 
-//void deleteRecord(IndexFile& index, DataFile& data, DataFile& overflow, int key) {
-//    Record record = findRecord(index, data, overflow, key);
-//    if (record.key == -1 || (record.key != -1 && record.deleted==true)) {
-//        printf("Record with this key doesn't exist \n");
-//        return;
-//    }
-//    else {
-//
-//    }
-//}
+void deleteRecord(IndexFile& index, DataFile& data, DataFile& overflow, int key) {
+    Record record = findRecord(index, data, overflow, key);
+    if (record.key == -1 || (record.key != -1 && record.deleted==true)) {
+        printf("Record with this key doesn't exist \n");
+        return;
+    }
+    else {
+        int pageNumber = findPageInIndex(index, key);
+        if (pageNumber != data.prevPage) {
+            loadPageToDataBuffer(data, pageNumber);
+            data.prevPage = pageNumber;
+        }
+        for (int i = 0; i < BUFFER_SIZE; i++) {
+            if (data.buffer[i].key == key) {
+                data.buffer[i].deleted = true; //jesli klucz jest w main area
+                writeToDataFile(data, pageNumber);
+                return;
+            }
+            if (data.buffer[i].key < key) {
+                record = data.buffer[i];
+               // break;
+            }
+        }
+        while (record.key != key) {
+            int nextOverflowPage = record.ovPointer / BUFFER_SIZE;
+            int nextOverflowPlaceInBuffer = record.ovPointer % BUFFER_SIZE;
+            if (nextOverflowPage != overflow.prevPage) {
+                loadPageToDataBuffer(overflow, nextOverflowPage);
+                overflow.prevPage = nextOverflowPage;
+            }
+            record = overflow.buffer[nextOverflowPlaceInBuffer];
+            if (record.key == key) {
+                overflow.buffer[nextOverflowPlaceInBuffer].deleted = true;
+                writeToDataFile(overflow, nextOverflowPage);
+                return;
+            }
+            
+
+        }
+    }
+}
 
 void showAllRecords(IndexFile& index, DataFile& data, DataFile& overflow) {
     Record recordToPrint;
@@ -919,6 +950,11 @@ int main()
         }
         else if (command == "show") {
             showAllRecords(indexFile, dataFile, overflowFile);
+        }
+        else if (command == "delete") {
+            int key;
+            cin >> key;
+            deleteRecord(indexFile, dataFile, overflowFile, key);
         }
         else if (command == "x") {
             break;
